@@ -20,7 +20,7 @@ npm install openclaw-linear-plugin
 1. Go to [Linear Settings → API → Applications](https://linear.app/settings/api/applications/new)
 2. Create a new application with:
    - Name: Your agent name (e.g., "DevBot")
-   - Webhook URL: `https://your-gateway/plugins/linear/linear`
+   - Webhook URL: `https://your-gateway/plugins/openclaw-linear-plugin/linear`
    - Enable **Agent session events** in webhook categories
 
 ### 2. Install the App via OAuth
@@ -53,7 +53,7 @@ Add to your `openclaw.json`:
 {
   "plugins": {
     "entries": {
-      "linear": {
+      "openclaw-linear-plugin": {
         "enabled": true,
         "config": {
           "devAgentId": "dev",
@@ -106,6 +106,12 @@ Supports `{session}` and `{issue}` placeholders.
 4. **Response Posting**: Agent's reply is posted back to Linear as a response activity
 
 ### Webhook Endpoint
+
+```
+POST /plugins/openclaw-linear-plugin/linear
+```
+
+Legacy path (still supported):
 
 ```
 POST /plugins/linear/linear

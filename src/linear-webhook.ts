@@ -885,7 +885,6 @@ function buildMessage(params: {
     params.prompt ? `User prompt:\n${params.prompt}` : "",
     guidanceLine,
     descLine,
-    "If the open_code tool is available, use it to plan, then execute, then open a PR.",
   ];
 
   return lines.filter(Boolean).join("\n\n");

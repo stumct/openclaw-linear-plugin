@@ -1,5 +1,5 @@
 {
-  "id": "linear",
+  "id": "openclaw-linear-plugin",
   "name": "Linear",
   "description": "Linear agent webhook bridge for OpenClaw dev runs",
   "configSchema": {

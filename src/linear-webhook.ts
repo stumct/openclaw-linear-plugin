@@ -686,25 +686,14 @@ async function loadCallGateway(api: OpenClawPluginApi): Promise<CallGateway> {
     return callRef.value;
   }
 
-  // Try to load from openclaw package
-  try {
-    const mod = await import("openclaw/gateway");
-    if (mod && typeof mod.callGateway === "function") {
-      callRef.value = mod.callGateway;
-      return mod.callGateway;
-    }
-  } catch {
-    // Fall through to error
-  }
-
-  // Fallback: try plugin API if available
+  // Use callGateway from plugin API
   if (api.callGateway && typeof api.callGateway === "function") {
     callRef.value = api.callGateway as CallGateway;
     return api.callGateway as CallGateway;
   }
 
   throw new Error(
-    "callGateway not available. Ensure openclaw is properly installed.",
+    "callGateway not available in plugin API. This plugin requires OpenClaw gateway.",
   );
 }
 

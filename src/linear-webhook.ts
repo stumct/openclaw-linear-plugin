@@ -1,6 +1,24 @@
 import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
-import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
+
+/**
+ * OpenClaw Plugin API interface
+ * Provided by OpenClaw when the plugin is loaded
+ */
+export interface OpenClawPluginApi {
+  pluginConfig?: Record<string, unknown>;
+  logger: {
+    info?: (msg: string) => void;
+    warn?: (msg: string) => void;
+    error?: (msg: string) => void;
+    debug?: (msg: string) => void;
+  };
+  callGateway?: unknown;
+  registerHttpRoute: (opts: {
+    path: string;
+    handler: (req: IncomingMessage, res: ServerResponse) => void | Promise<void>;
+  }) => void;
+}
 
 // Gateway call function type - loaded dynamically
 type CallGateway = (opts: {

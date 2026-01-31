@@ -1,6 +1,6 @@
-import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
+import { createLinearWebhook, OpenClawPluginApi } from "./src/linear-webhook.js";
 
-import { createLinearWebhook } from "./src/linear-webhook.js";
+export type { OpenClawPluginApi };
 
 export default function register(api: OpenClawPluginApi) {
   api.registerHttpRoute({

@@ -1,0 +1,41 @@
+{
+  "name": "openclaw-linear-plugin",
+  "version": "0.1.0",
+  "description": "Linear agent webhook integration for OpenClaw",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "openclaw.plugin.json",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "openclaw",
+    "linear",
+    "agent",
+    "webhook",
+    "plugin"
+  ],
+  "author": "stumct",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/stumct/openclaw-linear-plugin"
+  },
+  "bugs": {
+    "url": "https://github.com/stumct/openclaw-linear-plugin/issues"
+  },
+  "homepage": "https://github.com/stumct/openclaw-linear-plugin#readme",
+  "peerDependencies": {
+    "openclaw": ">=0.1.0"
+  },
+  "devDependencies": {
+    "openclaw": "^0.1.0",
+    "typescript": "^5.0.0"
+  }
+}

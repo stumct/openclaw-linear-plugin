@@ -1,0 +1,79 @@
+{
+  "id": "linear",
+  "name": "Linear",
+  "description": "Linear agent webhook bridge for OpenClaw dev runs",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "devAgentId": {
+        "type": "string",
+        "description": "Agent ID to handle Linear issues (default: 'dev')"
+      },
+      "linearWebhookSecret": {
+        "type": "string",
+        "description": "Linear webhook signing secret for signature verification"
+      },
+      "linearApiKey": {
+        "type": "string",
+        "description": "Linear OAuth token for posting activities and updating issues"
+      },
+      "notifyChannel": {
+        "type": "string",
+        "description": "Optional channel to deliver agent responses (e.g., 'discord')"
+      },
+      "notifyTo": {
+        "type": "string",
+        "description": "Optional target for notifications (e.g., 'channel:123456')"
+      },
+      "notifyAccountId": {
+        "type": "string",
+        "description": "Optional account ID for notifications"
+      },
+      "repoByTeam": {
+        "type": "object",
+        "additionalProperties": { "type": "string" },
+        "description": "Map Linear team keys to repository directories"
+      },
+      "repoByProject": {
+        "type": "object",
+        "additionalProperties": { "type": "string" },
+        "description": "Map Linear project keys to repository directories"
+      },
+      "defaultDir": {
+        "type": "string",
+        "description": "Default repository directory when no team/project mapping matches"
+      },
+      "delegateOnCreate": {
+        "type": "boolean",
+        "description": "Auto-delegate issues to the app user on session create (default: true)"
+      },
+      "startOnCreate": {
+        "type": "boolean",
+        "description": "Move issues to 'started' state on session create (default: true)"
+      },
+      "externalUrlBase": {
+        "type": "string",
+        "description": "Base URL for external session links (supports {session} and {issue} placeholders)"
+      },
+      "externalUrlLabel": {
+        "type": "string",
+        "description": "Label for external session links (default: 'OpenClaw session')"
+      }
+    }
+  },
+  "uiHints": {
+    "linearWebhookSecret": { "label": "Webhook secret", "sensitive": true },
+    "linearApiKey": { "label": "API key / OAuth token", "sensitive": true },
+    "delegateOnCreate": { "label": "Auto delegate" },
+    "startOnCreate": { "label": "Move to started" },
+    "externalUrlBase": {
+      "label": "External session URL",
+      "placeholder": "https://your-gateway/sessions/{session}"
+    },
+    "externalUrlLabel": {
+      "label": "External URL label",
+      "placeholder": "OpenClaw session"
+    }
+  }
+}

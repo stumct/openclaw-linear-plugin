@@ -372,10 +372,28 @@ async function handleAgentEvent(
 
 function resolveHookRegistrar(api: OpenClawPluginApi): HookRegistrar | null {
   if (typeof api.registerHook === "function") {
-    return (event, handler) => api.registerHook?.({ event, handler });
+    return (event, handler) => {
+      const registerHook = api.registerHook as unknown as (
+        ...args: unknown[]
+      ) => void;
+      try {
+        registerHook(event, handler);
+      } catch (err) {
+        registerHook({ event, handler });
+      }
+    };
   }
   if (typeof api.hooks?.register === "function") {
-    return (event, handler) => api.hooks?.register?.({ event, handler });
+    return (event, handler) => {
+      const registerHook = api.hooks?.register as unknown as (
+        ...args: unknown[]
+      ) => void;
+      try {
+        registerHook({ event, handler });
+      } catch (err) {
+        registerHook(event, handler);
+      }
+    };
   }
   if (typeof api.hooks?.on === "function") {
     return (event, handler) => api.hooks?.on?.(event, handler);

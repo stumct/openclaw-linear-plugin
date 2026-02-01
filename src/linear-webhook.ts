@@ -132,6 +132,7 @@ type LinearCfg = {
   streamMaxChars?: number;
   streamToolAllowlist?: string[];
   streamToolDenylist?: string[];
+  streamDebug?: boolean;
 };
 
 type ActivityContent =
@@ -438,29 +439,48 @@ async function handleToolHook(
   event: Record<string, unknown>,
   ctx?: Record<string, unknown>,
 ) {
+  const cfg = normalizeCfg(api.pluginConfig);
+  const debug = resolveFlag(cfg.streamDebug, false);
+
   const sessionKey = resolveHookSessionKey(event, ctx);
   if (!sessionKey) {
+    if (debug) {
+      logStreamDebug(api, "hook missing sessionKey", event, ctx);
+    }
     return;
   }
 
   const session = sessionRef[sessionKey];
   if (!session) {
+    if (debug) {
+      logStreamDebug(api, `no session mapping for ${sessionKey}`, event, ctx);
+    }
     return;
   }
-
-  const cfg = normalizeCfg(api.pluginConfig);
   if (!resolveFlag(cfg.streamActivities, false)) {
+    if (debug) {
+      api.logger.debug?.("linear stream disabled: streamActivities=false");
+    }
     return;
   }
   if (!resolveFlag(cfg.streamToolCalls, true)) {
+    if (debug) {
+      api.logger.debug?.("linear stream disabled: streamToolCalls=false");
+    }
     return;
   }
 
   const toolName = resolveHookToolName(event, ctx);
   if (!toolName) {
+    if (debug) {
+      logStreamDebug(api, "hook missing toolName", event, ctx);
+    }
     return;
   }
   if (!shouldStreamTool(cfg, toolName)) {
+    if (debug) {
+      api.logger.debug?.(`linear stream filtered tool: ${toolName}`);
+    }
     return;
   }
 
@@ -474,6 +494,9 @@ async function handleToolHook(
     ? { type: "action", action: toolName, parameter, result: resultText }
     : { type: "action", action: toolName, parameter };
 
+  if (debug) {
+    api.logger.debug?.(`linear stream action: ${toolName}`);
+  }
   void postActivity(api, cfg, session.sessionId, content);
 }
 
@@ -590,6 +613,12 @@ function trackLinearSession(
   sessionRef[sessionKey] = state;
   sessionIdRef[sessionId] = sessionKey;
 
+  if (resolveFlag(cfg.streamDebug, false)) {
+    api.logger.debug?.(
+      `linear stream mapping: ${sessionKey} -> ${sessionId}`,
+    );
+  }
+
   const intervalMs = resolveNumber(cfg.streamIntervalMs, 120000);
   if (intervalMs <= 0) {
     return;
@@ -608,6 +637,19 @@ function trackLinearSession(
       { ephemeral: true },
     );
   }, intervalMs);
+}
+
+function logStreamDebug(
+  api: OpenClawPluginApi,
+  message: string,
+  event: Record<string, unknown>,
+  ctx?: Record<string, unknown>,
+) {
+  const eventKeys = Object.keys(event ?? {}).slice(0, 12).join(", ");
+  const ctxKeys = Object.keys(ctx ?? {}).slice(0, 12).join(", ");
+  api.logger.debug?.(
+    `linear stream debug: ${message} (event: ${eventKeys || "none"}, ctx: ${ctxKeys || "none"})`,
+  );
 }
 
 function clearLinearSession(sessionKey: string) {
@@ -1093,6 +1135,7 @@ function normalizeCfg(input: Record<string, unknown> | undefined): LinearCfg {
     streamMaxChars: readConfigNumber(cfg, "streamMaxChars"),
     streamToolAllowlist: readConfigStringArray(cfg, "streamToolAllowlist"),
     streamToolDenylist: readConfigStringArray(cfg, "streamToolDenylist"),
+    streamDebug: readConfigBool(cfg, "streamDebug"),
   };
 }
 

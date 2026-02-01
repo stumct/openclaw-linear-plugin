@@ -85,6 +85,10 @@
         "type": "array",
         "items": { "type": "string" },
         "description": "Tool name denylist for streaming (supports '*' wildcards)"
+      },
+      "streamDebug": {
+        "type": "boolean",
+        "description": "Enable debug logging for streaming hooks (default: false)"
       }
     }
   },
@@ -106,6 +110,7 @@
     "streamIntervalMs": { "label": "Progress interval (ms)" },
     "streamMaxChars": { "label": "Stream max chars" },
     "streamToolAllowlist": { "label": "Stream tool allowlist" },
-    "streamToolDenylist": { "label": "Stream tool denylist" }
+    "streamToolDenylist": { "label": "Stream tool denylist" },
+    "streamDebug": { "label": "Stream debug logging" }
   }
 }

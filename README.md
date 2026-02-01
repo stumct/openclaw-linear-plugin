@@ -91,6 +91,7 @@ Add to your `openclaw.json`:
 | `streamMaxChars` | number | Max chars for streamed tool args/results (default: `500`) |
 | `streamToolAllowlist` | string[] | Tool name allowlist for streaming (supports `*` wildcards) |
 | `streamToolDenylist` | string[] | Tool name denylist for streaming (supports `*` wildcards) |
+| `streamDebug` | boolean | Enable debug logging for streaming hooks (default: `false`) |
 
 ### External URL Template
 
@@ -115,7 +116,8 @@ Enable streaming to post tool activity updates and periodic heartbeat thoughts:
   "streamIntervalMs": 120000,
   "streamMaxChars": 500,
   "streamToolAllowlist": ["*"],
-  "streamToolDenylist": ["browser", "canvas"]
+  "streamToolDenylist": ["browser", "canvas"],
+  "streamDebug": false
 }
 ```
 

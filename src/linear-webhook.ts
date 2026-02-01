@@ -200,7 +200,7 @@ export function registerLinearHooks(api: OpenClawPluginApi) {
     if (!hookStateRef.warned) {
       hookStateRef.warned = true;
       api.logger.warn?.(
-        "Linear plugin: hook API unavailable; streaming activities disabled.",
+        "Linear plugin: hook registration unavailable; streaming activities disabled.",
       );
     }
     return;
@@ -394,9 +394,9 @@ function resolveHookRegistrar(api: OpenClawPluginApi): HookRegistrar | null {
         ...args: unknown[]
       ) => void;
       try {
-        registerHook(event, handler, name);
-      } catch (err) {
         registerHook({ name, event, handler });
+      } catch (err) {
+        registerHook(event, handler, name);
       }
     };
   }
@@ -411,9 +411,6 @@ function resolveHookRegistrar(api: OpenClawPluginApi): HookRegistrar | null {
         registerHook(event, handler, name);
       }
     };
-  }
-  if (typeof api.hooks?.on === "function") {
-    return (event, handler) => api.hooks?.on?.(event, handler);
   }
   return null;
 }

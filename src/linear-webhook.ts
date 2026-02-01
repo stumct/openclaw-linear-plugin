@@ -46,6 +46,7 @@ const viewerRef: { value?: string } = {};
 const warnRef = { value: false };
 const stateRef: Record<string, string> = {};
 const sessionRef: Record<string, LinearSessionState> = {};
+const sessionIdRef: Record<string, string> = {};
 const hookStateRef = { registered: false, warned: false };
 
 const MAX_BODY = 2 * 1024 * 1024;
@@ -206,6 +207,10 @@ export function registerLinearHooks(api: OpenClawPluginApi) {
   }
 
   registrar("after_tool_call", (event: Record<string, unknown>) => {
+    void handleToolHook(api, event);
+  });
+
+  registrar("before_tool_call", (event: Record<string, unknown>) => {
     void handleToolHook(api, event);
   });
 
@@ -456,7 +461,31 @@ function resolveHookSessionKey(event: Record<string, unknown>) {
   }
   const context = readObject(event.context);
   const entry = readObject(context?.sessionEntry);
-  return readString(entry?.key) ?? readString(context?.sessionKey) ?? "";
+  const fromContext = readString(entry?.key) ?? readString(context?.sessionKey);
+  if (fromContext) {
+    return fromContext;
+  }
+  const sessionId = resolveHookSessionId(event, session, context);
+  if (sessionId && sessionIdRef[sessionId]) {
+    return sessionIdRef[sessionId];
+  }
+  return "";
+}
+
+function resolveHookSessionId(
+  event: Record<string, unknown>,
+  session: Record<string, unknown> | undefined,
+  context: Record<string, unknown> | undefined,
+) {
+  return (
+    readString(event.sessionId) ??
+    readString(event.agentSessionId) ??
+    readString(readObject(event.agentSession)?.id) ??
+    readString(session?.id) ??
+    readString(context?.sessionId) ??
+    readString(readObject(context?.agentSession)?.id) ??
+    ""
+  );
 }
 
 function resolveHookToolName(event: Record<string, unknown>) {
@@ -518,6 +547,7 @@ function trackLinearSession(
 
   const state: LinearSessionState = { sessionId };
   sessionRef[sessionKey] = state;
+  sessionIdRef[sessionId] = sessionKey;
 
   const intervalMs = resolveNumber(cfg.streamIntervalMs, 120000);
   if (intervalMs <= 0) {
@@ -547,6 +577,7 @@ function clearLinearSession(sessionKey: string) {
   if (current.heartbeat) {
     clearInterval(current.heartbeat);
   }
+  delete sessionIdRef[current.sessionId];
   delete sessionRef[sessionKey];
 }
 

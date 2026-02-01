@@ -2,7 +2,7 @@ import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 
 type HookHandler = (event: Record<string, unknown>) => void | Promise<void>;
-type HookRegistrar = (event: string, handler: HookHandler) => void;
+type HookRegistrar = (event: string, handler: HookHandler, name: string) => void;
 
 /**
  * OpenClaw Plugin API interface
@@ -206,20 +206,32 @@ export function registerLinearHooks(api: OpenClawPluginApi) {
     return;
   }
 
-  registrar("after_tool_call", (event: Record<string, unknown>) => {
-    void handleToolHook(api, event);
-  });
+  registrar(
+    "after_tool_call",
+    (event: Record<string, unknown>) => {
+      void handleToolHook(api, event);
+    },
+    "linear-stream-after-tool",
+  );
 
-  registrar("before_tool_call", (event: Record<string, unknown>) => {
-    void handleToolHook(api, event);
-  });
+  registrar(
+    "before_tool_call",
+    (event: Record<string, unknown>) => {
+      void handleToolHook(api, event);
+    },
+    "linear-stream-before-tool",
+  );
 
-  registrar("agent_end", (event: Record<string, unknown>) => {
-    const sessionKey = resolveHookSessionKey(event);
-    if (sessionKey) {
-      clearLinearSession(sessionKey);
-    }
-  });
+  registrar(
+    "agent_end",
+    (event: Record<string, unknown>) => {
+      const sessionKey = resolveHookSessionKey(event);
+      if (sessionKey) {
+        clearLinearSession(sessionKey);
+      }
+    },
+    "linear-stream-agent-end",
+  );
 }
 
 async function handleWebhook(
@@ -377,26 +389,26 @@ async function handleAgentEvent(
 
 function resolveHookRegistrar(api: OpenClawPluginApi): HookRegistrar | null {
   if (typeof api.registerHook === "function") {
-    return (event, handler) => {
+    return (event, handler, name) => {
       const registerHook = api.registerHook as unknown as (
         ...args: unknown[]
       ) => void;
       try {
-        registerHook(event, handler);
+        registerHook(event, handler, name);
       } catch (err) {
-        registerHook({ event, handler });
+        registerHook({ name, event, handler });
       }
     };
   }
   if (typeof api.hooks?.register === "function") {
-    return (event, handler) => {
+    return (event, handler, name) => {
       const registerHook = api.hooks?.register as unknown as (
         ...args: unknown[]
       ) => void;
       try {
-        registerHook({ event, handler });
+        registerHook({ name, event, handler });
       } catch (err) {
-        registerHook(event, handler);
+        registerHook(event, handler, name);
       }
     };
   }

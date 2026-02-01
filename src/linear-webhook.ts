@@ -394,9 +394,9 @@ function resolveHookRegistrar(api: OpenClawPluginApi): HookRegistrar | null {
         ...args: unknown[]
       ) => void;
       try {
-        registerHook({ name, event, handler });
+        registerHook(event, handler, { name });
       } catch (err) {
-        registerHook(event, handler, name);
+        registerHook({ name, event, handler });
       }
     };
   }
@@ -406,9 +406,9 @@ function resolveHookRegistrar(api: OpenClawPluginApi): HookRegistrar | null {
         ...args: unknown[]
       ) => void;
       try {
-        registerHook({ name, event, handler });
+        registerHook(event, handler, { name });
       } catch (err) {
-        registerHook(event, handler, name);
+        registerHook({ name, event, handler });
       }
     };
   }

@@ -833,13 +833,13 @@ function resolveKey(input: unknown) {
 
 function buildLabel(id: string, title: string) {
   if (id && title) {
-    return `Linear ${id} ${title}`.slice(0, 80);
+    return `Linear ${id} ${title}`.slice(0, 64);
   }
   if (id) {
-    return `Linear ${id}`;
+    return `Linear ${id}`.slice(0, 64);
   }
   if (title) {
-    return `Linear ${title}`.slice(0, 80);
+    return `Linear ${title}`.slice(0, 64);
   }
   return "Linear issue";
 }

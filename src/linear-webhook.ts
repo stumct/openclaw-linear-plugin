@@ -24,6 +24,7 @@ export interface OpenClawPluginApi {
     debug?: (msg: string) => void;
   };
   callGateway?: unknown;
+  on?: (event: string, handler: HookHandler, opts?: { priority?: number }) => void;
   registerHook?: (
     event: string | string[],
     handler: HookHandler,
@@ -404,6 +405,9 @@ async function handleAgentEvent(
 // ==========================================================================
 
 function resolveHookRegistrar(api: OpenClawPluginApi): HookRegistrar | null {
+  if (typeof api.on === "function") {
+    return (event, handler) => api.on?.(event, handler);
+  }
   if (typeof api.hooks?.on === "function") {
     return (event, handler) => api.hooks?.on?.(event, handler);
   }

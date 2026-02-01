@@ -404,6 +404,9 @@ async function handleAgentEvent(
 // ==========================================================================
 
 function resolveHookRegistrar(api: OpenClawPluginApi): HookRegistrar | null {
+  if (typeof api.hooks?.on === "function") {
+    return (event, handler) => api.hooks?.on?.(event, handler);
+  }
   if (typeof api.registerHook === "function") {
     return (event, handler, name) => {
       const registerHook = api.registerHook as unknown as (
@@ -427,9 +430,6 @@ function resolveHookRegistrar(api: OpenClawPluginApi): HookRegistrar | null {
         registerHook({ name, event, handler });
       }
     };
-  }
-  if (typeof api.hooks?.on === "function") {
-    return (event, handler) => api.hooks?.on?.(event, handler);
   }
   return null;
 }

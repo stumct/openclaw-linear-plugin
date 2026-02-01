@@ -1,8 +1,15 @@
 import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 
-type HookHandler = (event: Record<string, unknown>) => void | Promise<void>;
-type HookRegistrar = (event: string, handler: HookHandler, name: string) => void;
+type HookHandler = (
+  event: Record<string, unknown>,
+  ctx?: Record<string, unknown>,
+) => void | Promise<void>;
+type HookRegistrar = (
+  event: string,
+  handler: HookHandler,
+  name?: string,
+) => void;
 
 /**
  * OpenClaw Plugin API interface
@@ -17,9 +24,17 @@ export interface OpenClawPluginApi {
     debug?: (msg: string) => void;
   };
   callGateway?: unknown;
-  registerHook?: (opts: { event: string; handler: HookHandler }) => void;
+  registerHook?: (
+    event: string | string[],
+    handler: HookHandler,
+    opts?: { name?: string },
+  ) => void;
   hooks?: {
-    register?: (opts: { event: string; handler: HookHandler }) => void;
+    register?: (
+      event: string | string[],
+      handler: HookHandler,
+      opts?: { name?: string },
+    ) => void;
     on?: (event: string, handler: HookHandler) => void;
   };
   registerHttpRoute: (opts: {
@@ -208,24 +223,24 @@ export function registerLinearHooks(api: OpenClawPluginApi) {
 
   registrar(
     "after_tool_call",
-    (event: Record<string, unknown>) => {
-      void handleToolHook(api, event);
+    (event: Record<string, unknown>, ctx?: Record<string, unknown>) => {
+      void handleToolHook(api, event, ctx);
     },
     "linear-stream-after-tool",
   );
 
   registrar(
     "before_tool_call",
-    (event: Record<string, unknown>) => {
-      void handleToolHook(api, event);
+    (event: Record<string, unknown>, ctx?: Record<string, unknown>) => {
+      void handleToolHook(api, event, ctx);
     },
     "linear-stream-before-tool",
   );
 
   registrar(
     "agent_end",
-    (event: Record<string, unknown>) => {
-      const sessionKey = resolveHookSessionKey(event);
+    (event: Record<string, unknown>, ctx?: Record<string, unknown>) => {
+      const sessionKey = resolveHookSessionKey(event, ctx);
       if (sessionKey) {
         clearLinearSession(sessionKey);
       }
@@ -412,14 +427,18 @@ function resolveHookRegistrar(api: OpenClawPluginApi): HookRegistrar | null {
       }
     };
   }
+  if (typeof api.hooks?.on === "function") {
+    return (event, handler) => api.hooks?.on?.(event, handler);
+  }
   return null;
 }
 
 async function handleToolHook(
   api: OpenClawPluginApi,
   event: Record<string, unknown>,
+  ctx?: Record<string, unknown>,
 ) {
-  const sessionKey = resolveHookSessionKey(event);
+  const sessionKey = resolveHookSessionKey(event, ctx);
   if (!sessionKey) {
     return;
   }
@@ -437,7 +456,7 @@ async function handleToolHook(
     return;
   }
 
-  const toolName = resolveHookToolName(event);
+  const toolName = resolveHookToolName(event, ctx);
   if (!toolName) {
     return;
   }
@@ -458,7 +477,14 @@ async function handleToolHook(
   void postActivity(api, cfg, session.sessionId, content);
 }
 
-function resolveHookSessionKey(event: Record<string, unknown>) {
+function resolveHookSessionKey(
+  event: Record<string, unknown>,
+  ctx?: Record<string, unknown>,
+) {
+  const ctxKey = readString(ctx?.sessionKey);
+  if (ctxKey) {
+    return ctxKey;
+  }
   const direct = readString(event.sessionKey);
   if (direct) {
     return direct;
@@ -474,7 +500,7 @@ function resolveHookSessionKey(event: Record<string, unknown>) {
   if (fromContext) {
     return fromContext;
   }
-  const sessionId = resolveHookSessionId(event, session, context);
+  const sessionId = resolveHookSessionId(event, session, context, ctx);
   if (sessionId && sessionIdRef[sessionId]) {
     return sessionIdRef[sessionId];
   }
@@ -485,10 +511,12 @@ function resolveHookSessionId(
   event: Record<string, unknown>,
   session: Record<string, unknown> | undefined,
   context: Record<string, unknown> | undefined,
+  ctx?: Record<string, unknown>,
 ) {
   return (
     readString(event.sessionId) ??
     readString(event.agentSessionId) ??
+    readString(ctx?.sessionId) ??
     readString(readObject(event.agentSession)?.id) ??
     readString(session?.id) ??
     readString(context?.sessionId) ??
@@ -497,8 +525,12 @@ function resolveHookSessionId(
   );
 }
 
-function resolveHookToolName(event: Record<string, unknown>) {
+function resolveHookToolName(
+  event: Record<string, unknown>,
+  ctx?: Record<string, unknown>,
+) {
   return (
+    readString(ctx?.toolName) ??
     readString(event.tool) ??
     readString(event.toolName) ??
     readString(readObject(event.toolCall)?.tool) ??

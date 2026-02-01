@@ -240,6 +240,14 @@ export function registerLinearHooks(api: OpenClawPluginApi) {
   );
 
   registrar(
+    "tool_result_persist",
+    (event: Record<string, unknown>, ctx?: Record<string, unknown>) => {
+      void handleToolHook(api, event, ctx);
+    },
+    "linear-stream-tool-persist",
+  );
+
+  registrar(
     "agent_end",
     (event: Record<string, unknown>, ctx?: Record<string, unknown>) => {
       const sessionKey = resolveHookSessionKey(event, ctx);
@@ -491,7 +499,13 @@ async function handleToolHook(
   const maxChars = resolveNumber(cfg.streamMaxChars, 500);
   const args = resolveHookToolArgs(event);
   const result = resolveHookToolResult(event);
-  const parameter = truncateString(formatStreamValue(args), maxChars);
+  let parameter = truncateString(formatStreamValue(args), maxChars);
+  if (!parameter) {
+    const toolCallId = resolveHookToolCallId(event, ctx);
+    if (toolCallId) {
+      parameter = `toolCallId=${toolCallId}`;
+    }
+  }
   const resultText = truncateString(formatStreamValue(result), maxChars);
 
   const content: ActivityContent = resultText
@@ -567,6 +581,19 @@ function resolveHookToolName(
   );
 }
 
+function resolveHookToolCallId(
+  event: Record<string, unknown>,
+  ctx?: Record<string, unknown>,
+) {
+  return (
+    readString(ctx?.toolCallId) ??
+    readString(event.toolCallId) ??
+    readString(event.toolUseId) ??
+    readString(readObject(event.toolCall)?.id) ??
+    ""
+  );
+}
+
 function resolveHookToolArgs(event: Record<string, unknown>) {
   return (
     readObject(event.args) ??
@@ -590,6 +617,15 @@ function resolveHookToolResult(event: Record<string, unknown>) {
     return `Error: ${error}`;
   }
 
+  const message = readObject(event.message);
+  if (message) {
+    const text = extractToolResultText(message);
+    if (text) {
+      return text;
+    }
+    return message;
+  }
+
   return (
     event.result ??
     event.output ??
@@ -597,6 +633,27 @@ function resolveHookToolResult(event: Record<string, unknown>) {
     readObject(event.toolResult) ??
     readObject(event.resultData)
   );
+}
+
+function extractToolResultText(message: Record<string, unknown>) {
+  const content = readArray(message.content);
+  if (content.length === 0) {
+    return "";
+  }
+  const parts = content
+    .map((item) => {
+      const entry = readObject(item);
+      if (!entry) {
+        return "";
+      }
+      const type = readString(entry.type);
+      if (type !== "text") {
+        return "";
+      }
+      return readString(entry.text) ?? "";
+    })
+    .filter((value) => Boolean(value));
+  return parts.length > 0 ? parts.join("\n") : "";
 }
 
 function trackLinearSession(

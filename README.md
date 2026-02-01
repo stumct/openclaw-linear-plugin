@@ -85,6 +85,12 @@ Add to your `openclaw.json`:
 | `notifyTo` | string | Optional: Notification target (e.g., `"channel:123456"`) |
 | `externalUrlBase` | string | Optional: External session URL template |
 | `externalUrlLabel` | string | Optional: Label for external URL link |
+| `streamActivities` | boolean | Post progress activities during agent runs (default: `false`) |
+| `streamToolCalls` | boolean | Post tool call activities during agent runs (default: `true`) |
+| `streamIntervalMs` | number | Heartbeat interval for progress thoughts in ms (default: `120000`, `0` disables) |
+| `streamMaxChars` | number | Max chars for streamed tool args/results (default: `500`) |
+| `streamToolAllowlist` | string[] | Tool name allowlist for streaming (supports `*` wildcards) |
+| `streamToolDenylist` | string[] | Tool name denylist for streaming (supports `*` wildcards) |
 
 ### External URL Template
 
@@ -97,6 +103,21 @@ Use placeholders for dynamic URLs:
 ```
 
 Supports `{session}` and `{issue}` placeholders.
+
+### Streaming Progress (Optional)
+
+Enable streaming to post tool activity updates and periodic heartbeat thoughts:
+
+```json
+{
+  "streamActivities": true,
+  "streamToolCalls": true,
+  "streamIntervalMs": 120000,
+  "streamMaxChars": 500,
+  "streamToolAllowlist": ["*"],
+  "streamToolDenylist": ["browser", "canvas"]
+}
+```
 
 ## How It Works
 

@@ -1,6 +1,9 @@
 import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 
+type HookHandler = (event: Record<string, unknown>) => void | Promise<void>;
+type HookRegistrar = (event: string, handler: HookHandler) => void;
+
 /**
  * OpenClaw Plugin API interface
  * Provided by OpenClaw when the plugin is loaded
@@ -14,6 +17,11 @@ export interface OpenClawPluginApi {
     debug?: (msg: string) => void;
   };
   callGateway?: unknown;
+  registerHook?: (opts: { event: string; handler: HookHandler }) => void;
+  hooks?: {
+    register?: (opts: { event: string; handler: HookHandler }) => void;
+    on?: (event: string, handler: HookHandler) => void;
+  };
   registerHttpRoute: (opts: {
     path: string;
     handler: (req: IncomingMessage, res: ServerResponse) => void | Promise<void>;
@@ -28,10 +36,17 @@ type CallGateway = (opts: {
   timeoutMs?: number;
 }) => Promise<unknown>;
 
+type LinearSessionState = {
+  sessionId: string;
+  heartbeat?: ReturnType<typeof setInterval>;
+};
+
 const callRef: { value?: CallGateway } = {};
 const viewerRef: { value?: string } = {};
 const warnRef = { value: false };
 const stateRef: Record<string, string> = {};
+const sessionRef: Record<string, LinearSessionState> = {};
+const hookStateRef = { registered: false, warned: false };
 
 const MAX_BODY = 2 * 1024 * 1024;
 const AGENT_TIMEOUT_MS = 30 * 60 * 1000;
@@ -95,6 +110,12 @@ type LinearCfg = {
   startOnCreate?: boolean;
   externalUrlBase?: string;
   externalUrlLabel?: string;
+  streamActivities?: boolean;
+  streamToolCalls?: boolean;
+  streamIntervalMs?: number;
+  streamMaxChars?: number;
+  streamToolAllowlist?: string[];
+  streamToolDenylist?: string[];
 };
 
 type ActivityContent =
@@ -167,6 +188,35 @@ export function createLinearWebhook(api: OpenClawPluginApi) {
   };
 }
 
+export function registerLinearHooks(api: OpenClawPluginApi) {
+  if (hookStateRef.registered) {
+    return;
+  }
+  hookStateRef.registered = true;
+
+  const registrar = resolveHookRegistrar(api);
+  if (!registrar) {
+    if (!hookStateRef.warned) {
+      hookStateRef.warned = true;
+      api.logger.warn?.(
+        "Linear plugin: hook API unavailable; streaming activities disabled.",
+      );
+    }
+    return;
+  }
+
+  registrar("after_tool_call", (event: Record<string, unknown>) => {
+    void handleToolHook(api, event);
+  });
+
+  registrar("agent_end", (event: Record<string, unknown>) => {
+    const sessionKey = resolveHookSessionKey(event);
+    if (sessionKey) {
+      clearLinearSession(sessionKey);
+    }
+  });
+}
+
 async function handleWebhook(
   api: OpenClawPluginApi,
   cfg: LinearCfg,
@@ -229,6 +279,10 @@ async function handleAgentEvent(
   const signal = resolveSignal(data);
   const deliver = Boolean(cfg.notifyChannel && cfg.notifyTo);
 
+  if (resolveFlag(cfg.streamActivities, false) && session) {
+    trackLinearSession(api, cfg, sessionKey, session);
+  }
+
   const message = buildMessage({
     action,
     id,
@@ -276,38 +330,264 @@ async function handleAgentEvent(
 
   // Run the agent and post response
   const call = await loadCallGateway(api);
-  await call({
-    method: "agent",
-    params: {
-      message,
-      agentId: agent,
-      sessionKey,
-      label,
-      idempotencyKey: idem,
-      deliver,
-      channel: cfg.notifyChannel,
-      to: cfg.notifyTo,
-      accountId: cfg.notifyAccountId,
-    },
-    expectFinal: true,
-    timeoutMs: AGENT_TIMEOUT_MS,
-  })
-    .then((result) => {
-      const text = buildAgentResponse(result);
-      // Only post if we have actual content (not the fallback message)
-      if (!text || text === "Agent completed with no reply.") {
-        return;
-      }
-      void postActivity(api, cfg, session, { type: "response", body: text });
-    })
-    .catch((err: unknown) => {
-      const msg = err instanceof Error ? err.message : String(err);
-      api.logger.warn?.(`linear agent run failed: ${msg}`);
-      void postActivity(api, cfg, session, {
-        type: "error",
-        body: `Agent run failed: ${msg}`,
-      });
+  try {
+    const result = await call({
+      method: "agent",
+      params: {
+        message,
+        agentId: agent,
+        sessionKey,
+        label,
+        idempotencyKey: idem,
+        deliver,
+        channel: cfg.notifyChannel,
+        to: cfg.notifyTo,
+        accountId: cfg.notifyAccountId,
+      },
+      expectFinal: true,
+      timeoutMs: AGENT_TIMEOUT_MS,
     });
+
+    const text = buildAgentResponse(result);
+    // Only post if we have actual content (not the fallback message)
+    if (!text || text === "Agent completed with no reply.") {
+      return;
+    }
+    void postActivity(api, cfg, session, { type: "response", body: text });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    api.logger.warn?.(`linear agent run failed: ${msg}`);
+    void postActivity(api, cfg, session, {
+      type: "error",
+      body: `Agent run failed: ${msg}`,
+    });
+  } finally {
+    clearLinearSession(sessionKey);
+  }
+}
+
+// ==========================================================================
+// Streaming hook helpers
+// ==========================================================================
+
+function resolveHookRegistrar(api: OpenClawPluginApi): HookRegistrar | null {
+  if (typeof api.registerHook === "function") {
+    return (event, handler) => api.registerHook?.({ event, handler });
+  }
+  if (typeof api.hooks?.register === "function") {
+    return (event, handler) => api.hooks?.register?.({ event, handler });
+  }
+  if (typeof api.hooks?.on === "function") {
+    return (event, handler) => api.hooks?.on?.(event, handler);
+  }
+  return null;
+}
+
+async function handleToolHook(
+  api: OpenClawPluginApi,
+  event: Record<string, unknown>,
+) {
+  const sessionKey = resolveHookSessionKey(event);
+  if (!sessionKey) {
+    return;
+  }
+
+  const session = sessionRef[sessionKey];
+  if (!session) {
+    return;
+  }
+
+  const cfg = normalizeCfg(api.pluginConfig);
+  if (!resolveFlag(cfg.streamActivities, false)) {
+    return;
+  }
+  if (!resolveFlag(cfg.streamToolCalls, true)) {
+    return;
+  }
+
+  const toolName = resolveHookToolName(event);
+  if (!toolName) {
+    return;
+  }
+  if (!shouldStreamTool(cfg, toolName)) {
+    return;
+  }
+
+  const maxChars = resolveNumber(cfg.streamMaxChars, 500);
+  const args = resolveHookToolArgs(event);
+  const result = resolveHookToolResult(event);
+  const parameter = truncateString(formatStreamValue(args), maxChars);
+  const resultText = truncateString(formatStreamValue(result), maxChars);
+
+  const content: ActivityContent = resultText
+    ? { type: "action", action: toolName, parameter, result: resultText }
+    : { type: "action", action: toolName, parameter };
+
+  void postActivity(api, cfg, session.sessionId, content);
+}
+
+function resolveHookSessionKey(event: Record<string, unknown>) {
+  const direct = readString(event.sessionKey);
+  if (direct) {
+    return direct;
+  }
+  const session = readObject(event.session);
+  const fromSession = readString(session?.key);
+  if (fromSession) {
+    return fromSession;
+  }
+  const context = readObject(event.context);
+  const entry = readObject(context?.sessionEntry);
+  return readString(entry?.key) ?? readString(context?.sessionKey) ?? "";
+}
+
+function resolveHookToolName(event: Record<string, unknown>) {
+  return (
+    readString(event.tool) ??
+    readString(event.toolName) ??
+    readString(readObject(event.toolCall)?.tool) ??
+    readString(readObject(event.toolCall)?.name) ??
+    readString(readObject(event.tool)?.name) ??
+    ""
+  );
+}
+
+function resolveHookToolArgs(event: Record<string, unknown>) {
+  return (
+    readObject(event.args) ??
+    readObject(event.params) ??
+    readObject(readObject(event.toolCall)?.args) ??
+    readObject(readObject(event.toolCall)?.params) ??
+    readObject(readObject(event.toolCall)?.input) ??
+    readObject(readObject(event.tool)?.input) ??
+    event.args ??
+    event.params
+  );
+}
+
+function resolveHookToolResult(event: Record<string, unknown>) {
+  const error =
+    readString(event.error) ??
+    readString(readObject(event.error)?.message) ??
+    readString(readObject(event.result)?.error) ??
+    readString(readObject(readObject(event.result)?.error)?.message);
+  if (error) {
+    return `Error: ${error}`;
+  }
+
+  return (
+    event.result ??
+    event.output ??
+    event.response ??
+    readObject(event.toolResult) ??
+    readObject(event.resultData)
+  );
+}
+
+function trackLinearSession(
+  api: OpenClawPluginApi,
+  cfg: LinearCfg,
+  sessionKey: string,
+  sessionId: string,
+) {
+  if (!sessionKey || !sessionId) {
+    return;
+  }
+
+  if (sessionRef[sessionKey]) {
+    clearLinearSession(sessionKey);
+  }
+
+  const state: LinearSessionState = { sessionId };
+  sessionRef[sessionKey] = state;
+
+  const intervalMs = resolveNumber(cfg.streamIntervalMs, 120000);
+  if (intervalMs <= 0) {
+    return;
+  }
+
+  state.heartbeat = setInterval(() => {
+    const current = sessionRef[sessionKey];
+    if (!current) {
+      return;
+    }
+    void postActivity(
+      api,
+      cfg,
+      current.sessionId,
+      { type: "thought", body: "Working on it..." },
+      { ephemeral: true },
+    );
+  }, intervalMs);
+}
+
+function clearLinearSession(sessionKey: string) {
+  const current = sessionRef[sessionKey];
+  if (!current) {
+    return;
+  }
+  if (current.heartbeat) {
+    clearInterval(current.heartbeat);
+  }
+  delete sessionRef[sessionKey];
+}
+
+function resolveNumber(value: number | undefined, fallback: number) {
+  if (typeof value !== "number" || Number.isNaN(value)) {
+    return fallback;
+  }
+  return value;
+}
+
+function shouldStreamTool(cfg: LinearCfg, toolName: string) {
+  const name = toolName.toLowerCase();
+  if (cfg.streamToolDenylist?.some((pattern) => matchPattern(name, pattern))) {
+    return false;
+  }
+  if (cfg.streamToolAllowlist && cfg.streamToolAllowlist.length > 0) {
+    return cfg.streamToolAllowlist.some((pattern) => matchPattern(name, pattern));
+  }
+  return true;
+}
+
+function matchPattern(value: string, pattern: string) {
+  const lowered = pattern.toLowerCase();
+  if (lowered === "*") {
+    return true;
+  }
+  if (!lowered.includes("*")) {
+    return value === lowered;
+  }
+  const escaped = lowered.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const regex = new RegExp(`^${escaped.replace(/\\\*/g, ".*")}$`);
+  return regex.test(value);
+}
+
+function formatStreamValue(value: unknown) {
+  if (value === undefined) {
+    return "";
+  }
+  if (typeof value === "string") {
+    return value;
+  }
+  try {
+    return JSON.stringify(value);
+  } catch (err) {
+    return String(value);
+  }
+}
+
+function truncateString(value: string, maxChars: number) {
+  if (!value) {
+    return "";
+  }
+  if (value.length <= maxChars) {
+    return value;
+  }
+  if (maxChars <= 3) {
+    return value.slice(0, maxChars);
+  }
+  return `${value.slice(0, maxChars - 3)}...`;
 }
 
 async function postActivity(
@@ -717,6 +997,12 @@ function normalizeCfg(input: Record<string, unknown> | undefined): LinearCfg {
     startOnCreate: readConfigBool(cfg, "startOnCreate"),
     externalUrlBase: readConfigString(cfg, "externalUrlBase"),
     externalUrlLabel: readConfigString(cfg, "externalUrlLabel"),
+    streamActivities: readConfigBool(cfg, "streamActivities"),
+    streamToolCalls: readConfigBool(cfg, "streamToolCalls"),
+    streamIntervalMs: readConfigNumber(cfg, "streamIntervalMs"),
+    streamMaxChars: readConfigNumber(cfg, "streamMaxChars"),
+    streamToolAllowlist: readConfigStringArray(cfg, "streamToolAllowlist"),
+    streamToolDenylist: readConfigStringArray(cfg, "streamToolDenylist"),
   };
 }
 
@@ -735,6 +1021,25 @@ function readConfigBool(cfg: Record<string, unknown>, key: string) {
     return undefined;
   }
   return raw;
+}
+
+function readConfigNumber(cfg: Record<string, unknown>, key: string) {
+  const raw = cfg[key];
+  if (typeof raw !== "number" || Number.isNaN(raw)) {
+    return undefined;
+  }
+  return raw;
+}
+
+function readConfigStringArray(cfg: Record<string, unknown>, key: string) {
+  const raw = cfg[key];
+  if (!Array.isArray(raw)) {
+    return undefined;
+  }
+  const out = raw
+    .map((item) => (typeof item === "string" ? item.trim() : ""))
+    .filter((item) => Boolean(item));
+  return out.length > 0 ? out : undefined;
 }
 
 function readConfigMap(cfg: Record<string, unknown>, key: string) {
@@ -832,16 +1137,14 @@ function resolveKey(input: unknown) {
 // ============================================================================
 
 function buildLabel(id: string, title: string) {
-  if (id && title) {
-    return `Linear ${id} ${title}`.slice(0, 64);
-  }
-  if (id) {
-    return `Linear ${id}`.slice(0, 64);
-  }
-  if (title) {
-    return `Linear ${title}`.slice(0, 64);
-  }
-  return "Linear issue";
+  const label = id && title
+    ? `Linear ${id} ${title}`
+    : id
+      ? `Linear ${id}`
+      : title
+        ? `Linear ${title}`
+        : "Linear issue";
+  return label.slice(0, 64);
 }
 
 function buildMessage(params: {

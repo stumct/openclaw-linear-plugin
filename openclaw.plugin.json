@@ -59,6 +59,32 @@
       "externalUrlLabel": {
         "type": "string",
         "description": "Label for external session links (default: 'OpenClaw session')"
+      },
+      "streamActivities": {
+        "type": "boolean",
+        "description": "Post progress activities during agent runs (default: false)"
+      },
+      "streamToolCalls": {
+        "type": "boolean",
+        "description": "Post tool call activities during agent runs (default: true)"
+      },
+      "streamIntervalMs": {
+        "type": "number",
+        "description": "Interval for progress heartbeat thoughts in ms (default: 120000, 0 disables)"
+      },
+      "streamMaxChars": {
+        "type": "number",
+        "description": "Max chars for streamed tool args/results (default: 500)"
+      },
+      "streamToolAllowlist": {
+        "type": "array",
+        "items": { "type": "string" },
+        "description": "Tool name allowlist for streaming (supports '*' wildcards)"
+      },
+      "streamToolDenylist": {
+        "type": "array",
+        "items": { "type": "string" },
+        "description": "Tool name denylist for streaming (supports '*' wildcards)"
       }
     }
   },
@@ -74,6 +100,12 @@
     "externalUrlLabel": {
       "label": "External URL label",
       "placeholder": "OpenClaw session"
-    }
+    },
+    "streamActivities": { "label": "Stream progress" },
+    "streamToolCalls": { "label": "Stream tool calls" },
+    "streamIntervalMs": { "label": "Progress interval (ms)" },
+    "streamMaxChars": { "label": "Stream max chars" },
+    "streamToolAllowlist": { "label": "Stream tool allowlist" },
+    "streamToolDenylist": { "label": "Stream tool denylist" }
   }
 }
